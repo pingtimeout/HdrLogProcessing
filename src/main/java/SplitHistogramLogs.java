@@ -5,7 +5,9 @@ import psy.lob.saw.HdrHistogramUtil;
 import psy.lob.saw.OrderedHistogramLogReader;
 
 import java.io.File;
-import java.io.FileNotFoundException;
+import java.io.FileInputStream;
+import java.io.IOException;
+import java.io.InputStream;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
@@ -101,36 +103,42 @@ public class SplitHistogramLogs implements Runnable
         }
     }
 
-    private void split() throws FileNotFoundException
+    private void split() throws IOException
     {
-        OrderedHistogramLogReader reader = new OrderedHistogramLogReader(
-            inputFile,
-            start,
-            end,
-            tag -> shouldSkipTag(tag));
-        Map<String, HistogramLogWriter> writerByTag = new HashMap<>();
-        Histogram interval;
-        int i = 0;
-        while (reader.hasNext())
+        try(InputStream inputStream = new FileInputStream(inputFile))
         {
-            interval = (Histogram) reader.nextIntervalHistogram();
-            if (interval == null)
+            OrderedHistogramLogReader reader = new OrderedHistogramLogReader(
+                    inputStream,
+                    start,
+                    end,
+                    tag -> shouldSkipTag(tag));
+            Map<String, HistogramLogWriter> writerByTag = new HashMap<>();
+            Histogram interval;
+            int i = 0;
+            while (reader.hasNext())
             {
-                continue;
+                interval = (Histogram) reader.nextIntervalHistogram();
+                if (interval == null)
+                {
+                    continue;
+                }
+                String ntag = interval.getTag();
+                if (shouldSkipTag(ntag))
+                {
+                    throw new IllegalStateException("Should be filtered upfront by the reader");
+                }
+                if (verbose)
+                {
+                    logHistogramForVerbose(System.out, interval, i++);
+                }
+                interval.setTag(null);
+                HistogramLogWriter writer = writerByTag.computeIfAbsent(ntag, k -> createWriterForTag(reader, k));
+                writer.outputIntervalHistogram(interval);
             }
-            String ntag = interval.getTag();
-            if (shouldSkipTag(ntag))
-            {
-                throw new IllegalStateException("Should be filtered upfront by the reader");
-            }
-            if (verbose)
-            {
-                logHistogramForVerbose(System.out, interval, i++);
-            }
-            interval.setTag(null);
-            HistogramLogWriter writer = writerByTag.computeIfAbsent(ntag, k -> createWriterForTag(reader, k));
-            writer.outputIntervalHistogram(interval);
-
+        }
+        catch (IOException e)
+        {
+            throw new RuntimeException(e);
         }
     }
 

@@ -10,8 +10,8 @@ package psy.lob.saw;
 import org.HdrHistogram.EncodableHistogram;
 
 import java.io.Closeable;
-import java.io.File;
 import java.io.FileNotFoundException;
+import java.io.InputStream;
 import java.util.function.Predicate;
 import java.util.zip.DataFormatException;
 
@@ -143,26 +143,26 @@ public class OrderedHistogramLogReader implements Closeable
     private EncodableHistogram nextHistogram;
     private boolean inRange = true;
 
-    public OrderedHistogramLogReader(final File inputFile) throws FileNotFoundException
+    public OrderedHistogramLogReader(final InputStream inputStream) throws FileNotFoundException
     {
-        this(inputFile, 0.0, Long.MAX_VALUE * 1.0, s -> false, false);
+        this(inputStream, 0.0, Long.MAX_VALUE * 1.0, s -> false, false);
     }
 
-    public OrderedHistogramLogReader(File inputFile, double start, double end) throws FileNotFoundException
+    public OrderedHistogramLogReader(InputStream inputStream, double start, double end) throws FileNotFoundException
     {
-        this(inputFile, start, end, s -> false, false);
+        this(inputStream, start, end, s -> false, false);
     }
 
-    public OrderedHistogramLogReader(File inputFile, double start, double end, Predicate<String> shouldExcludeTag)
+    public OrderedHistogramLogReader(InputStream inputStream, double start, double end, Predicate<String> shouldExcludeTag)
         throws FileNotFoundException
     {
-        this(inputFile, start, end, shouldExcludeTag, false);
+        this(inputStream, start, end, shouldExcludeTag, false);
     }
 
     /**
      * Constructs a new OrderedHistogramLogReader that produces intervals read from the specified file.
      *
-     * @param inputFile         The File to read from
+     * @param inputStream       The data stream to read from
      * @param rangeStartTimeSec
      * @param rangeEndTimeSec
      * @param shouldExcludeTag  predicate returns true is tag should be skipped
@@ -170,12 +170,12 @@ public class OrderedHistogramLogReader implements Closeable
      * @throws FileNotFoundException when unable to find inputFile
      */
     public OrderedHistogramLogReader(
-        final File inputFile,
+        final InputStream inputStream,
         double rangeStartTimeSec,
         double rangeEndTimeSec,
         Predicate<String> shouldExcludeTag, boolean absolute) throws FileNotFoundException
     {
-        scanner = new HistogramLogScanner(inputFile);
+        scanner = new HistogramLogScanner(inputStream);
         this.rangeStartTimeSec = rangeStartTimeSec;
         this.rangeEndTimeSec = rangeEndTimeSec;
         this.absolute = absolute;

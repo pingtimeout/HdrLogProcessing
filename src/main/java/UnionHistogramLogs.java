@@ -6,9 +6,7 @@ import psy.lob.saw.HistogramSink;
 import psy.lob.saw.OrderedHistogramLogReader;
 import psy.lob.saw.UnionHistograms;
 
-import java.io.File;
-import java.io.FileOutputStream;
-import java.io.PrintStream;
+import java.io.*;
 import java.util.*;
 import java.util.function.Predicate;
 import java.util.regex.Pattern;
@@ -152,10 +150,13 @@ public class UnionHistogramLogs implements Runnable
             List<HistogramIterator> ins = new ArrayList<>();
             for (File inputFile : inputFiles)
             {
-                ins.add(new HistogramIterator(
-                    new OrderedHistogramLogReader(inputFile, start, end),
-                    inputFilesTags.get(inputFile),
-                    relative));
+                try(InputStream inputStream = new FileInputStream(inputFile))
+                {
+                    ins.add(new HistogramIterator(
+                            new OrderedHistogramLogReader(inputStream, start, end),
+                            inputFilesTags.get(inputFile),
+                            relative));
+                }
             }
             UnionHistograms unionHistograms = new UnionHistograms(verbose, System.out, ins, new HistogramSink()
             {

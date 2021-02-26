@@ -3,7 +3,9 @@ import org.kohsuke.args4j.Option;
 import psy.lob.saw.OrderedHistogramLogReader;
 
 import java.io.File;
-import java.io.FileNotFoundException;
+import java.io.FileInputStream;
+import java.io.IOException;
+import java.io.InputStream;
 import java.nio.file.Paths;
 import java.util.Locale;
 
@@ -34,34 +36,32 @@ public class HdrToCsv implements Runnable
     @Override
     public void run()
     {
-        OrderedHistogramLogReader reader = null;
-        try
+        try(InputStream inputStream = new FileInputStream(inputFile))
         {
-            reader = new OrderedHistogramLogReader(inputFile);
+            OrderedHistogramLogReader reader = new OrderedHistogramLogReader(inputStream);
+            System.out.println(
+                "#Absolute timestamp,Relative timestamp,Throughput,Min,Avg,p50,p90,p95,p99,p999,p9999,Max");
+            while (reader.hasNext())
+            {
+                Histogram interval = (Histogram) reader.nextIntervalHistogram();
+                System.out.printf(Locale.US,
+                    "%.3f,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d%n",
+                    interval.getStartTimeStamp() / 1000.0,
+                    interval.getStartTimeStamp() / 1000 - (long) reader.getStartTimeSec(),
+                    interval.getTotalCount(), interval.getMinValue(),
+                    (long) interval.getMean(),
+                    interval.getValueAtPercentile(50),
+                    interval.getValueAtPercentile(90),
+                    interval.getValueAtPercentile(95),
+                    interval.getValueAtPercentile(99),
+                    interval.getValueAtPercentile(99.9),
+                    interval.getValueAtPercentile(99.99),
+                    interval.getMaxValue());
+            }
         }
-        catch (FileNotFoundException e)
+        catch (IOException e)
         {
             throw new RuntimeException(e);
-        }
-
-        System.out.println(
-            "#Absolute timestamp,Relative timestamp,Throughput,Min,Avg,p50,p90,p95,p99,p999,p9999,Max");
-        while (reader.hasNext())
-        {
-            Histogram interval = (Histogram) reader.nextIntervalHistogram();
-            System.out.printf(Locale.US,
-                "%.3f,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d%n",
-                interval.getStartTimeStamp() / 1000.0,
-                interval.getStartTimeStamp() / 1000 - (long) reader.getStartTimeSec(),
-                interval.getTotalCount(), interval.getMinValue(),
-                (long) interval.getMean(),
-                interval.getValueAtPercentile(50),
-                interval.getValueAtPercentile(90),
-                interval.getValueAtPercentile(95),
-                interval.getValueAtPercentile(99),
-                interval.getValueAtPercentile(99.9),
-                interval.getValueAtPercentile(99.99),
-                interval.getMaxValue());
         }
     }
 }

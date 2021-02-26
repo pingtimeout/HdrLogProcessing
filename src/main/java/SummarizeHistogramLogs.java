@@ -3,10 +3,7 @@ import org.HdrHistogram.HistogramIterationValue;
 import org.kohsuke.args4j.Option;
 import psy.lob.saw.OrderedHistogramLogReader;
 
-import java.io.File;
-import java.io.FileNotFoundException;
-import java.io.FileOutputStream;
-import java.io.PrintStream;
+import java.io.*;
 import java.util.*;
 import java.util.function.Predicate;
 import java.util.regex.Pattern;
@@ -134,69 +131,77 @@ public class SummarizeHistogramLogs implements Runnable
         long intervalLengthSum = 0;
         for (File inputFile : inputFiles)
         {
-            if (verbose)
+            try(InputStream inputStream = new FileInputStream(inputFile))
             {
-                System.out.println("Summarizing file: " + inputFile.getName());
-            }
-            OrderedHistogramLogReader reader = new OrderedHistogramLogReader(
-                inputFile,
-                start,
-                end,
-                tag -> shouldSkipTag(tag));
-            Histogram interval;
-            int i = 0;
-            boolean first = true;
-            long startTime = 0;
-
-            while (reader.hasNext())
-            {
-                interval = (Histogram) reader.nextIntervalHistogram();
-                if (interval == null)
+                if (verbose)
                 {
-                    continue;
+                    System.out.println("Summarizing file: " + inputFile.getName());
                 }
-                if (first)
+                OrderedHistogramLogReader reader = new OrderedHistogramLogReader(
+                        inputStream,
+                        start,
+                        end,
+                        tag -> shouldSkipTag(tag));
+                Histogram interval;
+                int i = 0;
+                boolean first = true;
+                long startTime = 0;
+
+                while (reader.hasNext())
                 {
-                    first = false;
-                    startTime = interval.getStartTimeStamp();
+                    interval = (Histogram) reader.nextIntervalHistogram();
+                    if (interval == null)
+                    {
+                        continue;
+                    }
+                    if (first)
+                    {
+                        first = false;
+                        startTime = interval.getStartTimeStamp();
+                        if (verbose)
+                        {
+                            System.out.println("StartTime: " + new Date(startTime));
+                        }
+
+                    }
+                    String ntag = ignoreTag ? null : interval.getTag();
+                    final int numberOfSignificantValueDigits = interval.getNumberOfSignificantValueDigits();
+                    Histogram sum = sumByTag.computeIfAbsent(ntag, k ->
+                    {
+                        Histogram h = new Histogram(numberOfSignificantValueDigits);
+                        h.setTag(k);
+                        return h;
+                    });
+                    final long intervalLength = interval.getEndTimeStamp() - interval.getStartTimeStamp();
+                    intervalLengthSum += intervalLength;
+                    sum.add(interval);
                     if (verbose)
                     {
-                        System.out.println("StartTime: " + new Date(startTime));
+                        logHistogramForVerbose(System.out, interval, i++, outputValueUnitRatio);
                     }
-
                 }
-                String ntag = ignoreTag ? null : interval.getTag();
-                final int numberOfSignificantValueDigits = interval.getNumberOfSignificantValueDigits();
-                Histogram sum = sumByTag.computeIfAbsent(ntag, k ->
+                // calculate period
+                long maxPeriod = 0;
+                for (Histogram sum : sumByTag.values())
                 {
-                    Histogram h = new Histogram(numberOfSignificantValueDigits);
-                    h.setTag(k);
-                    return h;
-                });
-                final long intervalLength = interval.getEndTimeStamp() - interval.getStartTimeStamp();
-                intervalLengthSum += intervalLength;
-                sum.add(interval);
-                if (verbose)
-                {
-                    logHistogramForVerbose(System.out, interval, i++, outputValueUnitRatio);
+                    long sumPeriod = (sum.getEndTimeStamp() - sum.getStartTimeStamp());
+                    if (verbose)
+                    {
+                        System.out.print(inputFile.getName());
+                        System.out.print(", ");
+                        logHistogramForVerbose(System.out, sum, i++, outputValueUnitRatio);
+                    }
+                    sum.setEndTimeStamp(0);
+                    sum.setStartTimeStamp(Long.MAX_VALUE);
+                    maxPeriod = Math.max(maxPeriod, sumPeriod);
                 }
+                period += maxPeriod;
             }
-            // calculate period
-            long maxPeriod = 0;
-            for (Histogram sum : sumByTag.values())
+            catch (IOException e)
             {
-                long sumPeriod = (sum.getEndTimeStamp() - sum.getStartTimeStamp());
-                if (verbose)
-                {
-                    System.out.print(inputFile.getName());
-                    System.out.print(", ");
-                    logHistogramForVerbose(System.out, sum, i++, outputValueUnitRatio);
-                }
-                sum.setEndTimeStamp(0);
-                sum.setStartTimeStamp(Long.MAX_VALUE);
-                maxPeriod = Math.max(maxPeriod, sumPeriod);
+                throw new RuntimeException(e);
             }
-            period += maxPeriod;
+
         }
         if (ignoreTimeStamps)
         {
