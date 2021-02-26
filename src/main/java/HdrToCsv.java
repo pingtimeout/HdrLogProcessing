@@ -33,7 +33,7 @@ public class HdrToCsv implements Runnable
     {
         try(InputStream inputStream = new FileInputStream(inputFile))
         {
-            new CsvConverter(inputStream).convert();
+            new CsvConverter(inputStream, System.out).convert();
         }
         catch (IOException e)
         {
