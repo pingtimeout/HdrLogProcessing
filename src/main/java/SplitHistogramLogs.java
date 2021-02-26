@@ -6,12 +6,13 @@ import psy.lob.saw.OrderedHistogramLogReader;
 
 import java.io.File;
 import java.io.FileInputStream;
-import java.io.IOException;
+import java.io.FileNotFoundException;
 import java.io.InputStream;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Predicate;
 
 import static psy.lob.saw.HdrHistogramUtil.logHistogramForVerbose;
 
@@ -93,50 +94,11 @@ public class SplitHistogramLogs implements Runnable
                 System.out.printf("start:%.2f end: MAX path:%s file:%s \n", start, absolutePath, name);
             }
         }
-        try
-        {
-            split();
-        }
-        catch (Exception e)
-        {
-            throw new RuntimeException(e);
-        }
-    }
-
-    private void split() throws IOException
-    {
         try(InputStream inputStream = new FileInputStream(inputFile))
         {
-            OrderedHistogramLogReader reader = new OrderedHistogramLogReader(
-                    inputStream,
-                    start,
-                    end,
-                    tag -> shouldSkipTag(tag));
-            Map<String, HistogramLogWriter> writerByTag = new HashMap<>();
-            Histogram interval;
-            int i = 0;
-            while (reader.hasNext())
-            {
-                interval = (Histogram) reader.nextIntervalHistogram();
-                if (interval == null)
-                {
-                    continue;
-                }
-                String ntag = interval.getTag();
-                if (shouldSkipTag(ntag))
-                {
-                    throw new IllegalStateException("Should be filtered upfront by the reader");
-                }
-                if (verbose)
-                {
-                    logHistogramForVerbose(System.out, interval, i++);
-                }
-                interval.setTag(null);
-                HistogramLogWriter writer = writerByTag.computeIfAbsent(ntag, k -> createWriterForTag(reader, k));
-                writer.outputIntervalHistogram(interval);
-            }
+            new Splitter(inputFile.getName(), inputStream, start, end, verbose, this::shouldSkipTag).split();
         }
-        catch (IOException e)
+        catch (Exception e)
         {
             throw new RuntimeException(e);
         }
@@ -148,12 +110,65 @@ public class SplitHistogramLogs implements Runnable
         return excludeTags.contains(ntag) || (!includeTags.isEmpty() && !includeTags.contains(ntag));
     }
 
-    private HistogramLogWriter createWriterForTag(OrderedHistogramLogReader reader, String tag)
+    public static class Splitter
     {
-        tag = (tag == null) ? "default" : tag;
-        File outputFile = new File(tag + "." + inputFile.getName());
-        String comment = "Splitting of:" + inputFile.getName() + " start:" + start + " end:" + end;
-        HistogramLogWriter writer = HdrHistogramUtil.createLogWriter(outputFile, comment, reader.getStartTimeSec());
-        return writer;
+        private final String inputFileName;
+        private final InputStream inputStream;
+        private final double start;
+        private final double end;
+        private final boolean verbose;
+        private final Predicate<String> tagExclusionPredicate;
+
+        public Splitter(String inputFileName, InputStream inputStream,
+                        double start, double end,
+                        boolean verbose, Predicate<String> tagExclusionPredicate)
+        {
+            this.inputFileName = inputFileName;
+            this.inputStream = inputStream;
+            this.start = start;
+            this.end = end;
+            this.verbose = verbose;
+            this.tagExclusionPredicate = tagExclusionPredicate;
+        }
+
+        public void split() throws FileNotFoundException
+        {
+            OrderedHistogramLogReader reader = new OrderedHistogramLogReader(
+                    inputStream,
+                    start,
+                    end,
+                    tagExclusionPredicate);
+            Map<String, HistogramLogWriter> writerByTag = new HashMap<>();
+            Histogram interval;
+            int i = 0;
+            while (reader.hasNext())
+            {
+                interval = (Histogram) reader.nextIntervalHistogram();
+                if (interval == null)
+                {
+                    continue;
+                }
+                String ntag = interval.getTag();
+                if (tagExclusionPredicate.test(ntag))
+                {
+                    throw new IllegalStateException("Should be filtered upfront by the reader");
+                }
+                if (this.verbose)
+                {
+                    logHistogramForVerbose(System.out, interval, i++);
+                }
+                interval.setTag(null);
+                HistogramLogWriter writer = writerByTag.computeIfAbsent(ntag, k -> createWriterForTag(reader, k, inputFileName));
+                writer.outputIntervalHistogram(interval);
+            }
+        }
+
+        private HistogramLogWriter createWriterForTag(OrderedHistogramLogReader reader, String tag, String inputFileName)
+        {
+            tag = (tag == null) ? "default" : tag;
+            File outputFile = new File(tag + "." + inputFileName);
+            String comment = "Splitting of:" + inputFileName + " start:" + start + " end:" + end;
+            return HdrHistogramUtil.createLogWriter(outputFile, comment, reader.getStartTimeSec());
+        }
     }
 }
