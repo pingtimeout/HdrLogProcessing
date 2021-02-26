@@ -4,6 +4,7 @@ import psy.lob.saw.HistogramsSplitter;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.InputStream;
+import java.nio.file.Path;
 import java.util.HashSet;
 import java.util.Set;
 
@@ -23,6 +24,7 @@ public class SplitHistogramLogs implements Runnable
     private File inputFile;
     private Set<String> excludeTags = new HashSet<>();
     private Set<String> includeTags = new HashSet<>();
+    private String fileName;
 
     public static void main(String[] args) throws Exception
     {
@@ -89,7 +91,9 @@ public class SplitHistogramLogs implements Runnable
         }
         try(InputStream inputStream = new FileInputStream(inputFile))
         {
-            new HistogramsSplitter(inputFile.getName(), inputStream, start, end, verbose, this::shouldSkipTag).split();
+            Path outputDir = inputFile.toPath().getParent();
+            fileName = inputFile.getName();
+            new HistogramsSplitter(fileName, inputStream, start, end, verbose, this::shouldSkipTag, outputDir).split();
         }
         catch (Exception e)
         {
