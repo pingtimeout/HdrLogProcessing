@@ -7,6 +7,7 @@ import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.InputStream;
 import java.nio.file.Path;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.function.Predicate;
@@ -36,14 +37,15 @@ public class HistogramsSplitter
         this.outputDirectory = outputDirectory;
     }
 
-    public void split() throws FileNotFoundException
+    public Collection<File> split() throws FileNotFoundException
     {
         OrderedHistogramLogReader reader = new OrderedHistogramLogReader(
                 inputStream,
                 start,
                 end,
                 tagExclusionPredicate);
-        Map<String, HistogramLogWriter> writerByTag = new HashMap<>();
+        Map<String, File> outputFileByTag = new HashMap<>();
+        Map<File, HistogramLogWriter> writerByPath = new HashMap<>();
         Histogram interval;
         int i = 0;
         while (reader.hasNext())
@@ -62,17 +64,18 @@ public class HistogramsSplitter
             {
                 logHistogramForVerbose(System.out, interval, i++);
             }
-            interval.setTag(null);
-            HistogramLogWriter writer = writerByTag.computeIfAbsent(ntag, k -> createWriterForTag(reader, k));
+            File outputFile = outputFileByTag.computeIfAbsent(
+                    (ntag == null) ? "default" : ntag,
+                    tag -> outputDirectory.resolve(tag + "." + inputFileName).toFile());
+            HistogramLogWriter writer = writerByPath.computeIfAbsent(outputFile, o -> createWriterForTag(reader, o));
             writer.outputIntervalHistogram(interval);
         }
+        return outputFileByTag.values();
     }
 
-    private HistogramLogWriter createWriterForTag(OrderedHistogramLogReader reader, String tag)
+    private HistogramLogWriter createWriterForTag(OrderedHistogramLogReader reader, File outputFile)
     {
-        tag = (tag == null) ? "default" : tag;
-        Path outputPath = outputDirectory.resolve(tag + "." + inputFileName);
         String comment = "Splitting of:" + inputFileName + " start:" + start + " end:" + end;
-        return HdrHistogramUtil.createLogWriter(outputPath.toFile(), comment, reader.getStartTimeSec());
+        return HdrHistogramUtil.createLogWriter(outputFile, comment, reader.getStartTimeSec());
     }
 }
